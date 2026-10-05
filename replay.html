@@ -1,0 +1,1973 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>状态通道回放</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #171a20;
+    --ink-soft: #3c424e;
+    --muted: #6b7280;
+    --line: #d9dee6;
+    --accent: #0c7d78;
+    --accent-soft: #e0f2f1;
+    --ok: #1a7f4b;
+    --ok-soft: #e2f3ea;
+    --warn: #b35400;
+    --warn-soft: #fdeedd;
+    --danger: #c02d2d;
+    --danger-soft: #fbe6e6;
+    --refute: #5b3fc4;
+    --refute-soft: #ece8fb;
+    --note: #5f6b7a;
+    --note-soft: #edf0f4;
+    --shadow: 0 1px 2px rgba(20,25,35,.06), 0 4px 14px rgba(20,25,35,.06);
+    --radius: 12px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+            "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10131a;
+      --surface: #191d26;
+      --surface-2: #222733;
+      --ink: #e9ecf2;
+      --ink-soft: #c3c9d4;
+      --muted: #8f98a8;
+      --line: #2e3442;
+      --accent: #38c4ba;
+      --accent-soft: #13343a;
+      --ok: #4cc38a;
+      --ok-soft: #123225;
+      --warn: #e89b5e;
+      --warn-soft: #3a2715;
+      --danger: #f07878;
+      --danger-soft: #3c1c1c;
+      --refute: #a292f0;
+      --refute-soft: #272244;
+      --note: #98a2b3;
+      --note-soft: #232833;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10131a;
+    --surface: #191d26;
+    --surface-2: #222733;
+    --ink: #e9ecf2;
+    --ink-soft: #c3c9d4;
+    --muted: #8f98a8;
+    --line: #2e3442;
+    --accent: #38c4ba;
+    --ok: #4cc38a;
+    --ok-soft: #123225;
+    --warn: #e89b5e;
+    --warn-soft: #3a2715;
+    --danger: #f07878;
+    --danger-soft: #3c1c1c;
+    --refute: #a292f0;
+    --refute-soft: #272244;
+    --note: #98a2b3;
+    --note-soft: #232833;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px 20px 56px;
+  }
+
+  /* ---------- 头部 ---------- */
+  header.masthead {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
+  }
+  .eyebrow {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin-bottom: 6px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: .01em; }
+  .sub { color: var(--muted); margin: 0; max-width: 62ch; font-size: 13px; }
+  .head-actions { display: flex; gap: 8px; align-items: center; }
+  button {
+    font: inherit; color: inherit; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface);
+    border-radius: 9px; padding: 7px 12px;
+    transition: border-color .15s, background .15s, transform .05s;
+  }
+  button:hover { border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.icon-btn { padding: 7px 10px; }
+
+  /* ---------- 场景标签 ---------- */
+  .tabs {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .tab {
+    border-radius: 999px; padding: 7px 15px; font-size: 13px;
+    background: var(--surface); border: 1px solid var(--line); color: var(--ink-soft);
+  }
+  .tab[aria-selected="true"] {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+  }
+  .narrative {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;
+    color: var(--ink-soft); font-size: 13px;
+  }
+
+  /* ---------- 回放控制条 ---------- */
+  .controls {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+  .step-info { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 92px; }
+  .step-info small { color: var(--muted); font-weight: 400; }
+  .transport { display: flex; gap: 6px; }
+  .transport button { min-width: 38px; font-weight: 600; }
+  select {
+    font: inherit; padding: 6px 8px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  }
+  .progress {
+    flex: 1 1 220px; height: 6px; border-radius: 999px;
+    background: var(--surface-2); overflow: hidden; min-width: 160px;
+  }
+  .progress > i {
+    display: block; height: 100%; background: var(--accent);
+    width: 0%; transition: width .25s ease;
+  }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+  /* ---------- 主布局 ---------- */
+  .board-grid {
+    display: grid; gap: 16px;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .board-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* ---------- 时间轴 ---------- */
+  .timeline {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 8px 0; max-height: 72vh; overflow-y: auto;
+  }
+  .ev {
+    position: relative; display: flex; gap: 12px;
+    padding: 11px 16px 11px 14px;
+    border-left: 3px solid transparent;
+  }
+  .ev + .ev { border-top: 1px solid var(--line); }
+  .ev .rail {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding-top: 2px; flex: 0 0 34px;
+  }
+  .dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--surface-2); border: 2px solid var(--line);
+  }
+  .ev .seq { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ev .body { min-width: 0; flex: 1; }  .ev .meta {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 2px;
+  }
+  .tcode {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .badge {
+    font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+    background: var(--note-soft); color: var(--note); white-space: nowrap;
+  }
+  .ev .msg { color: var(--ink-soft); font-size: 13px; }
+  .ev .actor {
+    font-size: 11px; font-weight: 600; color: var(--accent);
+  }
+  .ev.current {
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
+  }
+  .ev.hot { box-shadow: inset 0 0 0 1px var(--line); }
+  .ev.k-dispute { border-left-color: var(--warn); }
+  .ev.k-refute  { border-left-color: var(--refute); }
+  .ev.k-reject, .ev.k-chainreject, .ev.k-refutereject { border-left-color: var(--danger); }
+  .ev.k-settled { border-left-color: var(--ok); }
+
+  .b-opened  { background: var(--accent-soft); color: var(--accent); }
+  .b-update  { background: var(--ok-soft); color: var(--ok); }
+  .b-reject  { background: var(--warn-soft); color: var(--warn); }
+  .b-dispute { background: var(--warn-soft); color: var(--warn); }
+  .b-chain   { background: var(--danger-soft); color: var(--danger); }
+  .b-refute  { background: var(--refute-soft); color: var(--refute); }
+  .b-refrej  { background: var(--danger-soft); color: var(--danger); }
+  .b-settled { background: var(--ok-soft); color: var(--ok); }
+  .b-note    { background: var(--note-soft); color: var(--note); }
+
+  /* 事件内的状态/签名/细节 */
+  .mini-state {
+    margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  }
+  .vchip {
+    font-family: var(--mono); font-size: 11.5px; font-weight: 700;
+    background: var(--surface-2); border-radius: 7px; padding: 2px 8px;
+  }
+  .bal {
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+  .sigs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .sig {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    background: var(--surface-2); border-radius: 6px; padding: 1.5px 7px;
+  }
+  .sig.good { color: var(--ok); }
+  .sig.bad  { color: var(--danger); background: var(--danger-soft); }
+  details.detail { margin-top: 7px; }
+  details.detail summary {
+    cursor: pointer; font-size: 11.5px; color: var(--muted);
+    list-style: none; user-select: none;
+  }
+  details.detail summary::before { content: "▸ "; }
+  details.detail[open] summary::before { content: "▾ "; }
+  .kv {
+    margin-top: 6px; border: 1px solid var(--line); border-radius: 8px;
+    overflow: hidden; font-size: 12px;
+  }
+  .kv div {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 4px 10px; border-bottom: 1px solid var(--line);
+  }
+  .kv div:last-child { border-bottom: none; }
+  .kv dt { color: var(--muted); margin: 0; }
+  .kv dd { margin: 0; font-family: var(--mono); font-size: 11.5px; text-align: right;
+           word-break: break-all; }
+
+  /* ---------- 右侧状态板 ---------- */
+  .board { display: flex; flex-direction: column; gap: 12px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 14px 16px;
+  }
+  .card h2 {
+    margin: 0 0 10px; font-size: 12px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .who { display: flex; align-items: center; gap: 8px; }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 8px; display: grid;
+    place-items: center; font-weight: 700; font-size: 12px; color: #fff;
+  }
+  .avatar.a { background: var(--accent); }
+  .avatar.b { background: var(--refute); }
+  .name-line { display: flex; align-items: baseline; gap: 8px; }
+  .name-line strong { font-size: 14px; }
+  .name-line span { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+
+  .field-row {
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 5px 0; font-size: 13px;
+  }
+  .field-row .k { color: var(--muted); }
+  .field-row .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .empty { color: var(--muted); font-size: 12.5px; font-style: italic; }
+
+  .balbar {
+    display: flex; height: 14px; border-radius: 7px; overflow: hidden;
+    background: var(--surface-2); margin: 8px 0 4px;
+  }
+  .balbar i { display: block; height: 100%; transition: width .3s ease; }
+  .balbar .seg-a { background: var(--accent); }
+  .balbar .seg-b { background: var(--refute); }
+  .bal-legend {
+    display: flex; justify-content: space-between; font-size: 11px; color: var(--muted);
+    font-variant-numeric: tabular-nums; font-family: var(--mono);
+  }
+
+  .diverge {
+    border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn);
+    border-radius: 10px; padding: 9px 13px; font-size: 12.5px; font-weight: 600;
+    display: flex; gap: 8px; align-items: center;
+  }
+  .in-sync {
+    border: 1px dashed var(--line); border-radius: 10px; padding: 8px 13px;
+    font-size: 12px; color: var(--muted); text-align: center;
+  }
+
+  .pill {
+    font-size: 11.5px; font-weight: 700; padding: 3px 11px; border-radius: 999px;
+  }
+  .pill.open { background: var(--note-soft); color: var(--note); }
+  .pill.disputed { background: var(--warn-soft); color: var(--warn); }
+  .pill.settled { background: var(--ok-soft); color: var(--ok); }
+
+  .timetrack {
+    position: relative; height: 22px; margin: 10px 2px 4px;
+  }
+  .timetrack .zone {
+    position: absolute; top: 7px; height: 8px; border-radius: 4px;
+    background: var(--warn-soft); border: 1px solid var(--warn);
+  }
+  .timetrack .tick {
+    position: absolute; top: 3px; width: 2px; height: 16px; background: var(--muted);
+  }
+  .timetrack .tick i {
+    position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+    font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--muted);
+  }
+  .timetrack .now {
+    position: absolute; top: 2px; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--accent);
+    transition: left .3s ease;
+  }
+  .track-labels {
+    display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted);
+  }
+
+  .final-box {
+    margin-top: 10px; border-radius: 10px; padding: 10px 13px;
+    background: var(--ok-soft); border: 1px solid var(--ok);
+  }
+  .final-box .field-row .k { color: var(--ok); }
+
+  .keys-card .keyline {
+    display: flex; gap: 8px; align-items: center; margin: 6px 0; font-size: 11.5px;
+    min-width: 0;
+  }
+  .keys-card .keyline code {
+    flex: 1 1 auto; min-width: 0;
+    font-family: var(--mono); color: var(--muted); font-size: 10.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .keys-card .tag {
+    flex: 0 0 auto; font-weight: 700; color: #fff; border-radius: 6px;
+    padding: 1px 8px; font-size: 10.5px;
+  }
+  .keys-card .tag.a { background: var(--accent); }
+  .keys-card .tag.b { background: var(--refute); }
+
+  footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow">Off-chain State Channel · On-chain Arbitration</div>
+      <h1>双方状态通道交互回放</h1>
+      <p class="sub">逐步回放 Alice 与 Bob 的链下状态更新：版本号严格递增的双签状态交换、链上争议仲裁、争议期内欺诈证明与过期反驳、伪造签名识别。所有签名由 Go 标准库 <code>crypto/ed25519</code> 生成并在页面中逐方展示校验结果。</p>
+    </div>
+    <div class="head-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" title="切换深浅色">◐ 主题</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="场景选择"></nav>
+  <div class="narrative" id="narrative"></div>
+
+  <div class="controls">
+    <div class="step-info"><span id="step-now">0</span> / <span id="step-total">0</span>
+      <small>步 · t=<span id="step-time">0</span></small>
+    </div>
+    <div class="transport">
+      <button id="btn-first" type="button" title="回到开头" aria-label="回到开头">⏮</button>
+      <button id="btn-prev"  type="button" title="上一步" aria-label="上一步">◀</button>
+      <button id="btn-play"  type="button" title="播放/暂停" aria-label="播放或暂停">▶</button>
+      <button id="btn-next"  type="button" title="下一步" aria-label="下一步">▶</button>
+      <button id="btn-last"  type="button" title="跳到结尾" aria-label="跳到结尾">⏭</button>
+    </div>
+    <select id="speed" title="播放速度" aria-label="播放速度">
+      <option value="1600">0.5×</option>
+      <option value="1100" selected>1×</option>
+      <option value="650">2×</option>
+      <option value="320">4×</option>
+    </select>
+    <div class="progress" aria-hidden="true"><i id="progress-bar"></i></div>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>更新</span>
+      <span><i style="background:var(--warn)"></i>争议</span>
+      <span><i style="background:var(--refute)"></i>反驳</span>
+      <span><i style="background:var(--danger)"></i>拒绝/伪造</span>
+      <span><i style="background:var(--ok)"></i>结算</span>
+    </div>
+  </div>
+
+  <div class="board-grid">
+    <section class="timeline" id="timeline" aria-label="事件时间轴"></section>
+
+    <aside class="board">
+      <div id="sync-banner" class="in-sync">回放开始：双方将各自保存链下最新双签状态</div>
+      <div class="card" id="card-a"></div>
+      <div class="card" id="card-b"></div>
+      <div class="card" id="card-chain"></div>
+      <div class="card keys-card" id="card-keys"></div>
+    </aside>
+  </div>
+
+  <footer>
+    本页面为 Go 程序生成的单一静态文件：数据与逻辑全部内嵌，无外部依赖、无网络请求。
+    签名内容 = 域分隔前缀 + 通道 ID + 版本号 + 双方余额（大端定长编码），由 Alice、Bob 分别用 Ed25519 私钥签名。
+  </footer>
+</div>
+
+<script type="application/json" id="report-data">{
+  "tool": "state-channel demo",
+  "disputePeriod": 10,
+  "deposit": 100,
+  "scenarios": [
+    {
+      "id": "normal",
+      "title": "场景一：正常更新与重放攻击被拒",
+      "narrative": "双方先完成两笔链下转账。Alice 在 v3 中余额较少，于是试图重放旧的双签状态 v2 把账态撤回；版本号必须严格递增，重放被拒绝。",
+      "total": 100,
+      "pubA": "7d5ffa8186c28faf6033652485044e5df842b34373a954f400d9b2b6d040ce48",
+      "pubB": "4619f37cd82a9d20db5a5b7f2e1781a8f319fa8d3ea6841b550c301521a85eae",
+      "events": [
+        {
+          "seq": 1,
+          "time": 0,
+          "kind": "channel-opened",
+          "message": "通道建立：初始状态 v1 由双方签名，各自保存",
+          "state": {
+            "channelId": "ch-normal",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "fd1034a7ae3ddc371f18b138d418d3d15e82df627ea99e38d34c6033600ec464c946aac0a81a12f0ff101e0c6f9eb58218a9df29959b30cda1631244a8d7220f",
+            "sigB": "685be5ef32989a7cbe9ceba603d8a3de12b455e08f2ddb643ed22cb62e018056e0b9fbaa69ba76a89ef506a91173cfe20c89770ff8a85530c3842f9bcb74ad01",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-normal",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "fd1034a7ae3ddc371f18b138d418d3d15e82df627ea99e38d34c6033600ec464c946aac0a81a12f0ff101e0c6f9eb58218a9df29959b30cda1631244a8d7220f",
+            "sigB": "685be5ef32989a7cbe9ceba603d8a3de12b455e08f2ddb643ed22cb62e018056e0b9fbaa69ba76a89ef506a91173cfe20c89770ff8a85530c3842f9bcb74ad01",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-normal",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "fd1034a7ae3ddc371f18b138d418d3d15e82df627ea99e38d34c6033600ec464c946aac0a81a12f0ff101e0c6f9eb58218a9df29959b30cda1631244a8d7220f",
+            "sigB": "685be5ef32989a7cbe9ceba603d8a3de12b455e08f2ddb643ed22cb62e018056e0b9fbaa69ba76a89ef506a91173cfe20c89770ff8a85530c3842f9bcb74ad01",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "depositA": 100,
+            "depositB": 0,
+            "total": 100
+          }
+        },
+        {
+          "seq": 2,
+          "time": 1,
+          "kind": "update-ok",
+          "actor": "alice",
+          "message": "链下更新成功：新版本由双方签名并交换",
+          "state": {
+            "channelId": "ch-normal",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "067ac5472419282790a9116cd868dfa621cc2298eff4c3bc3ca08b079d2470767977d937cb50a534ef0c3bb894f325366419357a7d8f88040e66e4bf00268908",
+            "sigB": "3f989a009caeb97c8a6feb5c607557a7a1db03f2defc32fc33e31f5e5bce13c89d65d8a62263aaf847403d3b9d7c1e98573934cf51612328d6ccd2b316113c05",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-normal",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "067ac5472419282790a9116cd868dfa621cc2298eff4c3bc3ca08b079d2470767977d937cb50a534ef0c3bb894f325366419357a7d8f88040e66e4bf00268908",
+            "sigB": "3f989a009caeb97c8a6feb5c607557a7a1db03f2defc32fc33e31f5e5bce13c89d65d8a62263aaf847403d3b9d7c1e98573934cf51612328d6ccd2b316113c05",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-normal",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "067ac5472419282790a9116cd868dfa621cc2298eff4c3bc3ca08b079d2470767977d937cb50a534ef0c3bb894f325366419357a7d8f88040e66e4bf00268908",
+            "sigB": "3f989a009caeb97c8a6feb5c607557a7a1db03f2defc32fc33e31f5e5bce13c89d65d8a62263aaf847403d3b9d7c1e98573934cf51612328d6ccd2b316113c05",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "amount": 10,
+            "from": "alice"
+          }
+        },
+        {
+          "seq": 3,
+          "time": 2,
+          "kind": "update-ok",
+          "actor": "bob",
+          "message": "链下更新成功：新版本由双方签名并交换",
+          "state": {
+            "channelId": "ch-normal",
+            "version": 3,
+            "balanceA": 94,
+            "balanceB": 6,
+            "sigA": "469c9b3022ef9672534eded77e0aea5bdcd3506ac0548cdbd4c5d664abad7adb198f112407ea29caf407d5cd9f06220eb96a4688cddfe85c137be19ae94e1803",
+            "sigB": "4aad1fe48e050324f90f804fb08ac7f618964f0107df0530fc075ac36e2f465fa638d35ee4f4b08e608d2efa4500f784c47fc56e934f13c9b9e2c7fe73a33f04",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-normal",
+            "version": 3,
+            "balanceA": 94,
+            "balanceB": 6,
+            "sigA": "469c9b3022ef9672534eded77e0aea5bdcd3506ac0548cdbd4c5d664abad7adb198f112407ea29caf407d5cd9f06220eb96a4688cddfe85c137be19ae94e1803",
+            "sigB": "4aad1fe48e050324f90f804fb08ac7f618964f0107df0530fc075ac36e2f465fa638d35ee4f4b08e608d2efa4500f784c47fc56e934f13c9b9e2c7fe73a33f04",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-normal",
+            "version": 3,
+            "balanceA": 94,
+            "balanceB": 6,
+            "sigA": "469c9b3022ef9672534eded77e0aea5bdcd3506ac0548cdbd4c5d664abad7adb198f112407ea29caf407d5cd9f06220eb96a4688cddfe85c137be19ae94e1803",
+            "sigB": "4aad1fe48e050324f90f804fb08ac7f618964f0107df0530fc075ac36e2f465fa638d35ee4f4b08e608d2efa4500f784c47fc56e934f13c9b9e2c7fe73a33f04",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "amount": 4,
+            "from": "bob"
+          }
+        },
+        {
+          "seq": 4,
+          "time": 3,
+          "kind": "update-reject",
+          "actor": "alice",
+          "message": "链下提交被拒绝：版本号未严格新于已知最新版本（重放被拒）",
+          "state": {
+            "channelId": "ch-normal",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "067ac5472419282790a9116cd868dfa621cc2298eff4c3bc3ca08b079d2470767977d937cb50a534ef0c3bb894f325366419357a7d8f88040e66e4bf00268908",
+            "sigB": "3f989a009caeb97c8a6feb5c607557a7a1db03f2defc32fc33e31f5e5bce13c89d65d8a62263aaf847403d3b9d7c1e98573934cf51612328d6ccd2b316113c05",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-normal",
+            "version": 3,
+            "balanceA": 94,
+            "balanceB": 6,
+            "sigA": "469c9b3022ef9672534eded77e0aea5bdcd3506ac0548cdbd4c5d664abad7adb198f112407ea29caf407d5cd9f06220eb96a4688cddfe85c137be19ae94e1803",
+            "sigB": "4aad1fe48e050324f90f804fb08ac7f618964f0107df0530fc075ac36e2f465fa638d35ee4f4b08e608d2efa4500f784c47fc56e934f13c9b9e2c7fe73a33f04",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-normal",
+            "version": 3,
+            "balanceA": 94,
+            "balanceB": 6,
+            "sigA": "469c9b3022ef9672534eded77e0aea5bdcd3506ac0548cdbd4c5d664abad7adb198f112407ea29caf407d5cd9f06220eb96a4688cddfe85c137be19ae94e1803",
+            "sigB": "4aad1fe48e050324f90f804fb08ac7f618964f0107df0530fc075ac36e2f465fa638d35ee4f4b08e608d2efa4500f784c47fc56e934f13c9b9e2c7fe73a33f04",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "lastVersion": 3,
+            "reason": "版本号未严格新于已知最新版本（重放被拒）",
+            "sigAValid": true,
+            "sigBValid": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "refute-ok",
+      "title": "场景二：链上争议与争议期内欺诈证明（反驳成功）",
+      "narrative": "v3 的回送消息丢失：Bob 持有 v3，Alice 只知道 v2。Alice 超时后用 v2 发起链上争议；Bob 在争议期内提交更高版本的双签状态 v3 作为欺诈证明，v2 结算失效，最终按 v3 结算。",
+      "total": 100,
+      "pubA": "a9bae3ed46f6a3a14b5f4a9d01b2034cd60dde721375daa95b45e60c81583541",
+      "pubB": "18e1f5b79fad5ceb12b9d4b006dafd63ea70ae622f0c57ed3c3fb3f917881ed6",
+      "events": [
+        {
+          "seq": 1,
+          "time": 0,
+          "kind": "channel-opened",
+          "message": "通道建立：初始状态 v1 由双方签名，各自保存",
+          "state": {
+            "channelId": "ch-refute-ok",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "119f15e7e1c82d417d1848eb1c962619b4028427645682754cecddbe584c1ac70d756c687f9154bad45ee1cc736591798366c76c321cea58732aa053eb70660d",
+            "sigB": "b49b4139311be23c2fe1b6832c19472be73fc5522685a63b4aa77dad4caba9bd0f20ce0626d2662a9ec1e1a2fda6548cfb180ba0bdb0e14d5d9b81bfdbe49d0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-refute-ok",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "119f15e7e1c82d417d1848eb1c962619b4028427645682754cecddbe584c1ac70d756c687f9154bad45ee1cc736591798366c76c321cea58732aa053eb70660d",
+            "sigB": "b49b4139311be23c2fe1b6832c19472be73fc5522685a63b4aa77dad4caba9bd0f20ce0626d2662a9ec1e1a2fda6548cfb180ba0bdb0e14d5d9b81bfdbe49d0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-ok",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "119f15e7e1c82d417d1848eb1c962619b4028427645682754cecddbe584c1ac70d756c687f9154bad45ee1cc736591798366c76c321cea58732aa053eb70660d",
+            "sigB": "b49b4139311be23c2fe1b6832c19472be73fc5522685a63b4aa77dad4caba9bd0f20ce0626d2662a9ec1e1a2fda6548cfb180ba0bdb0e14d5d9b81bfdbe49d0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "depositA": 100,
+            "depositB": 0,
+            "total": 100
+          }
+        },
+        {
+          "seq": 2,
+          "time": 1,
+          "kind": "update-ok",
+          "actor": "alice",
+          "message": "链下更新成功：新版本由双方签名并交换",
+          "state": {
+            "channelId": "ch-refute-ok",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "2cf267edd7c7c9624d775937a6f59721a511f35daecc1d48526270eb1a8392cacc9ec5544b03417719c7c095d4d442e2c9565dabfbd9e2bcb72afce24dede308",
+            "sigB": "402c709ba76ab416be3a93289743a7563dab31a10f6cfc4d4dab4b7720baa1fff7252e3cd0dc7e2d689ec6f363ac391a84e4669f709292fe350ddb63b1d6a30b",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-refute-ok",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "2cf267edd7c7c9624d775937a6f59721a511f35daecc1d48526270eb1a8392cacc9ec5544b03417719c7c095d4d442e2c9565dabfbd9e2bcb72afce24dede308",
+            "sigB": "402c709ba76ab416be3a93289743a7563dab31a10f6cfc4d4dab4b7720baa1fff7252e3cd0dc7e2d689ec6f363ac391a84e4669f709292fe350ddb63b1d6a30b",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-ok",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "2cf267edd7c7c9624d775937a6f59721a511f35daecc1d48526270eb1a8392cacc9ec5544b03417719c7c095d4d442e2c9565dabfbd9e2bcb72afce24dede308",
+            "sigB": "402c709ba76ab416be3a93289743a7563dab31a10f6cfc4d4dab4b7720baa1fff7252e3cd0dc7e2d689ec6f363ac391a84e4669f709292fe350ddb63b1d6a30b",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "amount": 10,
+            "from": "alice"
+          }
+        },
+        {
+          "seq": 3,
+          "time": 2,
+          "kind": "note",
+          "message": "网络故障：Bob 会签后的 v3 状态在回送途中丢失，Alice 仍停留在 v2，双方持有版本分叉",
+          "heldA": {
+            "channelId": "ch-refute-ok",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "2cf267edd7c7c9624d775937a6f59721a511f35daecc1d48526270eb1a8392cacc9ec5544b03417719c7c095d4d442e2c9565dabfbd9e2bcb72afce24dede308",
+            "sigB": "402c709ba76ab416be3a93289743a7563dab31a10f6cfc4d4dab4b7720baa1fff7252e3cd0dc7e2d689ec6f363ac391a84e4669f709292fe350ddb63b1d6a30b",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-ok",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "1b8b7f34976d902920a8d66f7b8b34f9e0bafbdd5c6d10d7db816dee1068236d985009f3e79fd9c9e1432923dd833c08718f0166fc388882833a2275ccea5c09",
+            "sigB": "85d9ee6571c622037866ef1a2a578e550416b62a23eef08079633369d552239171d9a4bc399174932a41fba8990b1ea3610e67987d58c0c7c2b13613a5436d02",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "heldByA": 2,
+            "heldByB": 3
+          }
+        },
+        {
+          "seq": 4,
+          "time": 3,
+          "kind": "note",
+          "message": "Alice 发起新的链下更新请求，Bob 已离线不应答，等待超时……",
+          "heldA": {
+            "channelId": "ch-refute-ok",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "2cf267edd7c7c9624d775937a6f59721a511f35daecc1d48526270eb1a8392cacc9ec5544b03417719c7c095d4d442e2c9565dabfbd9e2bcb72afce24dede308",
+            "sigB": "402c709ba76ab416be3a93289743a7563dab31a10f6cfc4d4dab4b7720baa1fff7252e3cd0dc7e2d689ec6f363ac391a84e4669f709292fe350ddb63b1d6a30b",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-ok",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "1b8b7f34976d902920a8d66f7b8b34f9e0bafbdd5c6d10d7db816dee1068236d985009f3e79fd9c9e1432923dd833c08718f0166fc388882833a2275ccea5c09",
+            "sigB": "85d9ee6571c622037866ef1a2a578e550416b62a23eef08079633369d552239171d9a4bc399174932a41fba8990b1ea3610e67987d58c0c7c2b13613a5436d02",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          }
+        },
+        {
+          "seq": 5,
+          "time": 4,
+          "kind": "dispute",
+          "actor": "alice",
+          "message": "链下协商超时，发起链上争议并进入争议期",
+          "state": {
+            "channelId": "ch-refute-ok",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "2cf267edd7c7c9624d775937a6f59721a511f35daecc1d48526270eb1a8392cacc9ec5544b03417719c7c095d4d442e2c9565dabfbd9e2bcb72afce24dede308",
+            "sigB": "402c709ba76ab416be3a93289743a7563dab31a10f6cfc4d4dab4b7720baa1fff7252e3cd0dc7e2d689ec6f363ac391a84e4669f709292fe350ddb63b1d6a30b",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-refute-ok",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "2cf267edd7c7c9624d775937a6f59721a511f35daecc1d48526270eb1a8392cacc9ec5544b03417719c7c095d4d442e2c9565dabfbd9e2bcb72afce24dede308",
+            "sigB": "402c709ba76ab416be3a93289743a7563dab31a10f6cfc4d4dab4b7720baa1fff7252e3cd0dc7e2d689ec6f363ac391a84e4669f709292fe350ddb63b1d6a30b",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-ok",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "1b8b7f34976d902920a8d66f7b8b34f9e0bafbdd5c6d10d7db816dee1068236d985009f3e79fd9c9e1432923dd833c08718f0166fc388882833a2275ccea5c09",
+            "sigB": "85d9ee6571c622037866ef1a2a578e550416b62a23eef08079633369d552239171d9a4bc399174932a41fba8990b1ea3610e67987d58c0c7c2b13613a5436d02",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "disputed",
+            "bestVersion": 2,
+            "deadline": 14
+          },
+          "detail": {
+            "deadline": 14,
+            "disputePeriod": 10,
+            "submittedVersion": 2
+          }
+        },
+        {
+          "seq": 6,
+          "time": 9,
+          "kind": "refute",
+          "actor": "bob",
+          "message": "争议期内提交更高版本双签状态作为欺诈证明：旧版本结算失效，链上采信新版本",
+          "state": {
+            "channelId": "ch-refute-ok",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "1b8b7f34976d902920a8d66f7b8b34f9e0bafbdd5c6d10d7db816dee1068236d985009f3e79fd9c9e1432923dd833c08718f0166fc388882833a2275ccea5c09",
+            "sigB": "85d9ee6571c622037866ef1a2a578e550416b62a23eef08079633369d552239171d9a4bc399174932a41fba8990b1ea3610e67987d58c0c7c2b13613a5436d02",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-refute-ok",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "2cf267edd7c7c9624d775937a6f59721a511f35daecc1d48526270eb1a8392cacc9ec5544b03417719c7c095d4d442e2c9565dabfbd9e2bcb72afce24dede308",
+            "sigB": "402c709ba76ab416be3a93289743a7563dab31a10f6cfc4d4dab4b7720baa1fff7252e3cd0dc7e2d689ec6f363ac391a84e4669f709292fe350ddb63b1d6a30b",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-ok",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "1b8b7f34976d902920a8d66f7b8b34f9e0bafbdd5c6d10d7db816dee1068236d985009f3e79fd9c9e1432923dd833c08718f0166fc388882833a2275ccea5c09",
+            "sigB": "85d9ee6571c622037866ef1a2a578e550416b62a23eef08079633369d552239171d9a4bc399174932a41fba8990b1ea3610e67987d58c0c7c2b13613a5436d02",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "disputed",
+            "bestVersion": 3,
+            "deadline": 14
+          },
+          "detail": {
+            "deadline": 14,
+            "invalidatedVersion": 2,
+            "newBestVersion": 3
+          }
+        },
+        {
+          "seq": 7,
+          "time": 15,
+          "kind": "settled",
+          "message": "争议期结束，无人再能反驳：链上按最高版本双签状态最终结算",
+          "state": {
+            "channelId": "ch-refute-ok",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "1b8b7f34976d902920a8d66f7b8b34f9e0bafbdd5c6d10d7db816dee1068236d985009f3e79fd9c9e1432923dd833c08718f0166fc388882833a2275ccea5c09",
+            "sigB": "85d9ee6571c622037866ef1a2a578e550416b62a23eef08079633369d552239171d9a4bc399174932a41fba8990b1ea3610e67987d58c0c7c2b13613a5436d02",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-refute-ok",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "2cf267edd7c7c9624d775937a6f59721a511f35daecc1d48526270eb1a8392cacc9ec5544b03417719c7c095d4d442e2c9565dabfbd9e2bcb72afce24dede308",
+            "sigB": "402c709ba76ab416be3a93289743a7563dab31a10f6cfc4d4dab4b7720baa1fff7252e3cd0dc7e2d689ec6f363ac391a84e4669f709292fe350ddb63b1d6a30b",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-ok",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "1b8b7f34976d902920a8d66f7b8b34f9e0bafbdd5c6d10d7db816dee1068236d985009f3e79fd9c9e1432923dd833c08718f0166fc388882833a2275ccea5c09",
+            "sigB": "85d9ee6571c622037866ef1a2a578e550416b62a23eef08079633369d552239171d9a4bc399174932a41fba8990b1ea3610e67987d58c0c7c2b13613a5436d02",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "settled",
+            "bestVersion": 3,
+            "deadline": 14,
+            "finalVersion": 3,
+            "finalA": 80,
+            "finalB": 20
+          },
+          "detail": {
+            "balanceA": 80,
+            "balanceB": 20,
+            "firstDisputeBy": "alice",
+            "winningVersion": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "refute-late",
+      "title": "场景三：超过争议期的反驳不再有效",
+      "narrative": "与场景二相同的版本分叉，但 Bob 直到争议期结束后才上线提交 v3。超过争议期后反驳证据不再被接受，旧的 v2 状态成为最终结算——这正是争议期设计的刚性边界。",
+      "total": 100,
+      "pubA": "ffaffdb691fb35a021822cc8d0701724dbd4f2991c5d14bdfb9cc6125e44de60",
+      "pubB": "5f4b50081ba0c5e8cfe498453ca55ece49287ad65820fa3af106f255ca36ffdc",
+      "events": [
+        {
+          "seq": 1,
+          "time": 0,
+          "kind": "channel-opened",
+          "message": "通道建立：初始状态 v1 由双方签名，各自保存",
+          "state": {
+            "channelId": "ch-refute-late",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "2f427440faf494086743e8ddb9699535a0e3ebe98426c2f4c118856c0870883e805b08075b007b578c543490f6e4c77df03db98722e4f90d11bfd6cfed2a6204",
+            "sigB": "4beda97ee0006b7abcfb5c3a15574497858649c31331158af93b83dd742cedf8f2ee041d7fd3ec5015a6f311e9d5d1b3aa02dba8cbfe504e60403343ce60da0c",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-refute-late",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "2f427440faf494086743e8ddb9699535a0e3ebe98426c2f4c118856c0870883e805b08075b007b578c543490f6e4c77df03db98722e4f90d11bfd6cfed2a6204",
+            "sigB": "4beda97ee0006b7abcfb5c3a15574497858649c31331158af93b83dd742cedf8f2ee041d7fd3ec5015a6f311e9d5d1b3aa02dba8cbfe504e60403343ce60da0c",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-late",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "2f427440faf494086743e8ddb9699535a0e3ebe98426c2f4c118856c0870883e805b08075b007b578c543490f6e4c77df03db98722e4f90d11bfd6cfed2a6204",
+            "sigB": "4beda97ee0006b7abcfb5c3a15574497858649c31331158af93b83dd742cedf8f2ee041d7fd3ec5015a6f311e9d5d1b3aa02dba8cbfe504e60403343ce60da0c",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "depositA": 100,
+            "depositB": 0,
+            "total": 100
+          }
+        },
+        {
+          "seq": 2,
+          "time": 1,
+          "kind": "update-ok",
+          "actor": "alice",
+          "message": "链下更新成功：新版本由双方签名并交换",
+          "state": {
+            "channelId": "ch-refute-late",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "5f20efbcf84f5f1a9ab3feef04afcdc4f7c51bdd2be5d512fc6efb914ac151e8d8307cac5a2bfb93c167be484c9ca5da6a7bd10f8e6e43a23345817954e3030e",
+            "sigB": "2640368c3e63017e570d65ff59d9a9e83322f9ec3f4fbb0ee4059f54c03edc04bec38337e2d92a100481cc513ed1c055b1fe4c4b54e2d6ff7dd96f296a20b805",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-refute-late",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "5f20efbcf84f5f1a9ab3feef04afcdc4f7c51bdd2be5d512fc6efb914ac151e8d8307cac5a2bfb93c167be484c9ca5da6a7bd10f8e6e43a23345817954e3030e",
+            "sigB": "2640368c3e63017e570d65ff59d9a9e83322f9ec3f4fbb0ee4059f54c03edc04bec38337e2d92a100481cc513ed1c055b1fe4c4b54e2d6ff7dd96f296a20b805",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-late",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "5f20efbcf84f5f1a9ab3feef04afcdc4f7c51bdd2be5d512fc6efb914ac151e8d8307cac5a2bfb93c167be484c9ca5da6a7bd10f8e6e43a23345817954e3030e",
+            "sigB": "2640368c3e63017e570d65ff59d9a9e83322f9ec3f4fbb0ee4059f54c03edc04bec38337e2d92a100481cc513ed1c055b1fe4c4b54e2d6ff7dd96f296a20b805",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "amount": 10,
+            "from": "alice"
+          }
+        },
+        {
+          "seq": 3,
+          "time": 2,
+          "kind": "note",
+          "message": "v3 回送消息丢失：Alice 持有 v2，Bob 持有 v3",
+          "heldA": {
+            "channelId": "ch-refute-late",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "5f20efbcf84f5f1a9ab3feef04afcdc4f7c51bdd2be5d512fc6efb914ac151e8d8307cac5a2bfb93c167be484c9ca5da6a7bd10f8e6e43a23345817954e3030e",
+            "sigB": "2640368c3e63017e570d65ff59d9a9e83322f9ec3f4fbb0ee4059f54c03edc04bec38337e2d92a100481cc513ed1c055b1fe4c4b54e2d6ff7dd96f296a20b805",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-late",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "e9e4b3292723168aec93a477c9d5104e1bace936815d0200c1c7e8a7513946630e8abddc40e62d5c531fec34ead0a0047ffc33f0c3e53314f2d74d33b2cd4a09",
+            "sigB": "14bd42089f91a573157b43f421004d1ea3cdb13f0b9adda526a84caeb354261c56e2d9062f1a9f50541a7f7ef3996b82e83dfac6e3a0ff3abe0007ce6b88e90d",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "heldByA": 2,
+            "heldByB": 3
+          }
+        },
+        {
+          "seq": 4,
+          "time": 4,
+          "kind": "dispute",
+          "actor": "alice",
+          "message": "链下协商超时，发起链上争议并进入争议期",
+          "state": {
+            "channelId": "ch-refute-late",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "5f20efbcf84f5f1a9ab3feef04afcdc4f7c51bdd2be5d512fc6efb914ac151e8d8307cac5a2bfb93c167be484c9ca5da6a7bd10f8e6e43a23345817954e3030e",
+            "sigB": "2640368c3e63017e570d65ff59d9a9e83322f9ec3f4fbb0ee4059f54c03edc04bec38337e2d92a100481cc513ed1c055b1fe4c4b54e2d6ff7dd96f296a20b805",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-refute-late",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "5f20efbcf84f5f1a9ab3feef04afcdc4f7c51bdd2be5d512fc6efb914ac151e8d8307cac5a2bfb93c167be484c9ca5da6a7bd10f8e6e43a23345817954e3030e",
+            "sigB": "2640368c3e63017e570d65ff59d9a9e83322f9ec3f4fbb0ee4059f54c03edc04bec38337e2d92a100481cc513ed1c055b1fe4c4b54e2d6ff7dd96f296a20b805",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-late",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "e9e4b3292723168aec93a477c9d5104e1bace936815d0200c1c7e8a7513946630e8abddc40e62d5c531fec34ead0a0047ffc33f0c3e53314f2d74d33b2cd4a09",
+            "sigB": "14bd42089f91a573157b43f421004d1ea3cdb13f0b9adda526a84caeb354261c56e2d9062f1a9f50541a7f7ef3996b82e83dfac6e3a0ff3abe0007ce6b88e90d",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "disputed",
+            "bestVersion": 2,
+            "deadline": 14
+          },
+          "detail": {
+            "deadline": 14,
+            "disputePeriod": 10,
+            "submittedVersion": 2
+          }
+        },
+        {
+          "seq": 5,
+          "time": 4,
+          "kind": "note",
+          "message": "Bob 在此期间离线，没有监控链上争议……",
+          "heldA": {
+            "channelId": "ch-refute-late",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "5f20efbcf84f5f1a9ab3feef04afcdc4f7c51bdd2be5d512fc6efb914ac151e8d8307cac5a2bfb93c167be484c9ca5da6a7bd10f8e6e43a23345817954e3030e",
+            "sigB": "2640368c3e63017e570d65ff59d9a9e83322f9ec3f4fbb0ee4059f54c03edc04bec38337e2d92a100481cc513ed1c055b1fe4c4b54e2d6ff7dd96f296a20b805",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-late",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "e9e4b3292723168aec93a477c9d5104e1bace936815d0200c1c7e8a7513946630e8abddc40e62d5c531fec34ead0a0047ffc33f0c3e53314f2d74d33b2cd4a09",
+            "sigB": "14bd42089f91a573157b43f421004d1ea3cdb13f0b9adda526a84caeb354261c56e2d9062f1a9f50541a7f7ef3996b82e83dfac6e3a0ff3abe0007ce6b88e90d",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "disputed",
+            "bestVersion": 2,
+            "deadline": 14
+          }
+        },
+        {
+          "seq": 6,
+          "time": 16,
+          "kind": "refute-reject",
+          "actor": "bob",
+          "message": "反驳已超过争议期，证据不再有效：旧状态结算维持不变",
+          "state": {
+            "channelId": "ch-refute-late",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "e9e4b3292723168aec93a477c9d5104e1bace936815d0200c1c7e8a7513946630e8abddc40e62d5c531fec34ead0a0047ffc33f0c3e53314f2d74d33b2cd4a09",
+            "sigB": "14bd42089f91a573157b43f421004d1ea3cdb13f0b9adda526a84caeb354261c56e2d9062f1a9f50541a7f7ef3996b82e83dfac6e3a0ff3abe0007ce6b88e90d",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-refute-late",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "5f20efbcf84f5f1a9ab3feef04afcdc4f7c51bdd2be5d512fc6efb914ac151e8d8307cac5a2bfb93c167be484c9ca5da6a7bd10f8e6e43a23345817954e3030e",
+            "sigB": "2640368c3e63017e570d65ff59d9a9e83322f9ec3f4fbb0ee4059f54c03edc04bec38337e2d92a100481cc513ed1c055b1fe4c4b54e2d6ff7dd96f296a20b805",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-late",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "e9e4b3292723168aec93a477c9d5104e1bace936815d0200c1c7e8a7513946630e8abddc40e62d5c531fec34ead0a0047ffc33f0c3e53314f2d74d33b2cd4a09",
+            "sigB": "14bd42089f91a573157b43f421004d1ea3cdb13f0b9adda526a84caeb354261c56e2d9062f1a9f50541a7f7ef3996b82e83dfac6e3a0ff3abe0007ce6b88e90d",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "disputed",
+            "bestVersion": 2,
+            "deadline": 14
+          },
+          "detail": {
+            "deadline": 14,
+            "evidenceVersion": 3,
+            "now": 16,
+            "reason": "已超过争议期，反驳证据不再被接受",
+            "settledAtVersion": 2
+          }
+        },
+        {
+          "seq": 7,
+          "time": 16,
+          "kind": "settled",
+          "message": "争议期结束，无人再能反驳：链上按最高版本双签状态最终结算",
+          "state": {
+            "channelId": "ch-refute-late",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "5f20efbcf84f5f1a9ab3feef04afcdc4f7c51bdd2be5d512fc6efb914ac151e8d8307cac5a2bfb93c167be484c9ca5da6a7bd10f8e6e43a23345817954e3030e",
+            "sigB": "2640368c3e63017e570d65ff59d9a9e83322f9ec3f4fbb0ee4059f54c03edc04bec38337e2d92a100481cc513ed1c055b1fe4c4b54e2d6ff7dd96f296a20b805",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-refute-late",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "5f20efbcf84f5f1a9ab3feef04afcdc4f7c51bdd2be5d512fc6efb914ac151e8d8307cac5a2bfb93c167be484c9ca5da6a7bd10f8e6e43a23345817954e3030e",
+            "sigB": "2640368c3e63017e570d65ff59d9a9e83322f9ec3f4fbb0ee4059f54c03edc04bec38337e2d92a100481cc513ed1c055b1fe4c4b54e2d6ff7dd96f296a20b805",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-refute-late",
+            "version": 3,
+            "balanceA": 80,
+            "balanceB": 20,
+            "sigA": "e9e4b3292723168aec93a477c9d5104e1bace936815d0200c1c7e8a7513946630e8abddc40e62d5c531fec34ead0a0047ffc33f0c3e53314f2d74d33b2cd4a09",
+            "sigB": "14bd42089f91a573157b43f421004d1ea3cdb13f0b9adda526a84caeb354261c56e2d9062f1a9f50541a7f7ef3996b82e83dfac6e3a0ff3abe0007ce6b88e90d",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "settled",
+            "bestVersion": 2,
+            "deadline": 14,
+            "finalVersion": 2,
+            "finalA": 90,
+            "finalB": 10
+          },
+          "detail": {
+            "balanceA": 90,
+            "balanceB": 10,
+            "firstDisputeBy": "alice",
+            "winningVersion": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "forged",
+      "title": "场景四：伪造签名状态被链上拒绝",
+      "narrative": "链上仲裁对提交的状态逐方核验 Ed25519 签名。伪造状态因 Bob 签名不匹配被直接拒绝，仲裁合约保持开启；随后合法的 v2 双签状态正常进入争议与结算流程。",
+      "total": 100,
+      "pubA": "3940676720a65017cea1f94dca4f83e08a5fc74e6a59d113814d713910967bda",
+      "pubB": "512de8e63cfe0efd8be9794e82defb3ec8167eeeeae2ffd921cd7fe36999e115",
+      "events": [
+        {
+          "seq": 1,
+          "time": 0,
+          "kind": "channel-opened",
+          "message": "通道建立：初始状态 v1 由双方签名，各自保存",
+          "state": {
+            "channelId": "ch-forged",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "8b11246fae3026048f850eee8e4c8467712eb7219c32b71b163c9b91fbd99cc85ac44c3566f9026fe7c939d45774e1cf7f97e04a94c645f4ed1d6bc0beec6708",
+            "sigB": "f263fecc9b60fe6a473a8d9f0d996f690668201ad38a4b3909793bf48c14c876c3c51b5dad4329de2bdba1b3d94a33c72178e71636e997c118117b5c5b8de30c",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-forged",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "8b11246fae3026048f850eee8e4c8467712eb7219c32b71b163c9b91fbd99cc85ac44c3566f9026fe7c939d45774e1cf7f97e04a94c645f4ed1d6bc0beec6708",
+            "sigB": "f263fecc9b60fe6a473a8d9f0d996f690668201ad38a4b3909793bf48c14c876c3c51b5dad4329de2bdba1b3d94a33c72178e71636e997c118117b5c5b8de30c",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-forged",
+            "version": 1,
+            "balanceA": 100,
+            "balanceB": 0,
+            "sigA": "8b11246fae3026048f850eee8e4c8467712eb7219c32b71b163c9b91fbd99cc85ac44c3566f9026fe7c939d45774e1cf7f97e04a94c645f4ed1d6bc0beec6708",
+            "sigB": "f263fecc9b60fe6a473a8d9f0d996f690668201ad38a4b3909793bf48c14c876c3c51b5dad4329de2bdba1b3d94a33c72178e71636e997c118117b5c5b8de30c",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "depositA": 100,
+            "depositB": 0,
+            "total": 100
+          }
+        },
+        {
+          "seq": 2,
+          "time": 1,
+          "kind": "update-ok",
+          "actor": "alice",
+          "message": "链下更新成功：新版本由双方签名并交换",
+          "state": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "amount": 10,
+            "from": "alice"
+          }
+        },
+        {
+          "seq": 3,
+          "time": 2,
+          "kind": "note",
+          "message": "攻击者提交伪造的 v99 状态：Alice 签名为真，但 Bob 签名位置是伪造的",
+          "heldA": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          }
+        },
+        {
+          "seq": 4,
+          "time": 2,
+          "kind": "chain-reject",
+          "actor": "bob",
+          "message": "链上拒绝争议申请：双签状态签名校验失败（存在伪造签名）",
+          "state": {
+            "channelId": "ch-forged",
+            "version": 99,
+            "balanceA": 0,
+            "balanceB": 100,
+            "sigA": "cb3d3ea5429368abd2a1763c455af6c055764d5ba98247b9fc2eb325c14ecc75ea50ca2b71cb3ae75598df022f24d052034cad557ef30f27bb28a4f527f9d408",
+            "sigB": "9694e283368311b7d01c4b32265094e2ec72d7c30c746231c440ce912065fd7d66e18b7c9b83df32d2b2a73782e35d2110fbd759946737e4c143dbd6a0e5ec09",
+            "sigAValid": true,
+            "sigBValid": false
+          },
+          "heldA": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "open",
+            "bestVersion": 0,
+            "deadline": 0
+          },
+          "detail": {
+            "reason": "双签状态签名校验失败（存在伪造签名）",
+            "sigAValid": true,
+            "sigBValid": false
+          }
+        },
+        {
+          "seq": 5,
+          "time": 3,
+          "kind": "dispute",
+          "actor": "alice",
+          "message": "链下协商超时，发起链上争议并进入争议期",
+          "state": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "disputed",
+            "bestVersion": 2,
+            "deadline": 13
+          },
+          "detail": {
+            "deadline": 13,
+            "disputePeriod": 10,
+            "submittedVersion": 2
+          }
+        },
+        {
+          "seq": 6,
+          "time": 14,
+          "kind": "settled",
+          "message": "争议期结束，无人再能反驳：链上按最高版本双签状态最终结算",
+          "state": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldA": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "heldB": {
+            "channelId": "ch-forged",
+            "version": 2,
+            "balanceA": 90,
+            "balanceB": 10,
+            "sigA": "86da4b531e026b6a6e19073c42dd39960d90e1c2ab838412b0d6c328c095ca83b62f20f153f134acf4447c772895e65ba0420566d272e2c8b10e3d45df89a902",
+            "sigB": "3b318cd6e43081dc1bb0416268caf38324705b2332ef1d9799231475341f0bb6eaedaed3c80d49cad434d1186436d502872d35a5e6747e90270f626c54ea4e0a",
+            "sigAValid": true,
+            "sigBValid": true
+          },
+          "chain": {
+            "status": "settled",
+            "bestVersion": 2,
+            "deadline": 13,
+            "finalVersion": 2,
+            "finalA": 90,
+            "finalB": 10
+          },
+          "detail": {
+            "balanceA": 90,
+            "balanceB": 10,
+            "firstDisputeBy": "alice",
+            "winningVersion": 2
+          }
+        }
+      ]
+    }
+  ]
+}</script>
+<script>
+(function () {
+  "use strict";
+
+  var report = JSON.parse(document.getElementById("report-data").textContent);
+  var KIND_META = {
+    "channel-opened": { cls: "k-opened",  badge: "b-opened",  label: "通道建立" },
+    "update-ok":      { cls: "k-updateok", badge: "b-update",  label: "链下更新" },
+    "update-reject":  { cls: "k-reject",   badge: "b-reject",  label: "拒绝更新" },
+    "dispute":        { cls: "k-dispute hot", badge: "b-dispute", label: "发起争议" },
+    "chain-reject":   { cls: "k-chainreject", badge: "b-chain", label: "链上拒绝" },
+    "refute":         { cls: "k-refute hot",  badge: "b-refute", label: "欺诈证明" },
+    "refute-reject":  { cls: "k-refutereject", badge: "b-refrej", label: "反驳被拒" },
+    "settled":        { cls: "k-settled", badge: "b-settled", label: "最终结算" },
+    "note":           { cls: "k-note",    badge: "b-note",    label: "旁白" }
+  };
+  var DETAIL_LABELS = {
+    depositA: "Alice 初始存款", depositB: "Bob 初始存款", total: "通道总额",
+    from: "发起方", amount: "转账金额",
+    reason: "原因", sigAValid: "Alice 签名", sigBValid: "Bob 签名",
+    lastVersion: "接收方已知版本", version: "版本号",
+    heldByA: "Alice 持有版本", heldByB: "Bob 持有版本",
+    submittedVersion: "提交版本", deadline: "争议期截止 t",
+    disputePeriod: "争议期长度", now: "当前时间 t",
+    evidenceVersion: "证据版本", settledAtVersion: "已采信版本",
+    invalidatedVersion: "失效版本", newBestVersion: "新采信版本",
+    bestVersion: "已采信版本", winningVersion: "获胜版本",
+    balanceA: "Alice 最终余额", balanceB: "Bob 最终余额",
+    firstDisputeBy: "争议发起方"
+  };
+
+  var scenarioIdx = 0, step = 0, playing = false, timer = null;
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function scenario() { return report.scenarios[scenarioIdx]; }
+  function events() { return scenario().events; }
+  function period() { return report.disputePeriod; }
+
+  /* ---------- 主题 ---------- */
+  var themeBtn = $("theme-toggle");
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme") ||
+      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  }
+  themeBtn.addEventListener("click", function () {
+    document.documentElement.setAttribute("data-theme",
+      currentTheme() === "dark" ? "light" : "dark");
+  });
+
+  /* ---------- 场景标签 ---------- */
+  var tabs = $("tabs");
+  report.scenarios.forEach(function (s, i) {
+    var b = el("button", "tab", s.title.replace(/^场景[一二三四]：/, ""));
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", i === 0 ? "true" : "false");
+    b.addEventListener("click", function () { loadScenario(i); });
+    tabs.appendChild(b);
+  });
+
+  function loadScenario(i, stepN) {
+    scenarioIdx = i;
+    stopPlay();
+    step = (typeof stepN === "number") ? stepN : 0;
+    Array.prototype.forEach.call(tabs.children, function (b, j) {
+      b.setAttribute("aria-selected", j === i ? "true" : "false");
+    });
+    $("narrative").textContent = scenario().narrative;
+    render();
+    updateHash();
+  }
+
+  // URL hash 形如 #2/5 表示场景下标 2、第 5 步，便于分享定位。
+  function updateHash() {
+    try {
+      var h = "#" + scenarioIdx + "/" + step;
+      if (location.hash !== h) history.replaceState(null, "", h);
+    } catch (e) { /* file:// 下忽略 */ }
+  }
+  function readHash() {
+    var m = (location.hash || "").match(/^#(\d+)\/(\d+)$/);
+    if (!m) return null;
+    return { s: Math.min(parseInt(m[1], 10), report.scenarios.length - 1),
+             n: parseInt(m[2], 10) };
+  }
+
+  /* ---------- 控制 ---------- */
+  function setStep(n) {
+    step = Math.max(0, Math.min(events().length, n));
+    render();
+    updateHash();
+  }
+  function stopPlay() {
+    playing = false;
+    if (timer) { clearInterval(timer); timer = null; }
+    $("btn-play").textContent = "▶";
+  }
+  function startPlay() {
+    if (step >= events().length) step = 0;
+    playing = true;
+    $("btn-play").textContent = "⏸";
+    timer = setInterval(function () {
+      if (step >= events().length) { stopPlay(); return; }
+      setStep(step + 1);
+    }, parseInt($("speed").value, 10));
+  }
+  $("btn-first").addEventListener("click", function () { stopPlay(); setStep(0); });
+  $("btn-prev").addEventListener("click",  function () { stopPlay(); setStep(step - 1); });
+  $("btn-next").addEventListener("click",  function () { stopPlay(); setStep(step + 1); });
+  $("btn-last").addEventListener("click",  function () { stopPlay(); setStep(events().length); });
+  $("btn-play").addEventListener("click",  function () { playing ? stopPlay() : startPlay(); });
+  $("speed").addEventListener("change", function () { if (playing) { stopPlay(); startPlay(); } });
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "SELECT") return;
+    if (e.key === "ArrowRight") { stopPlay(); setStep(step + 1); }
+    if (e.key === "ArrowLeft")  { stopPlay(); setStep(step - 1); }
+    if (e.key === " ") { e.preventDefault(); playing ? stopPlay() : startPlay(); }
+  });
+
+  /* ---------- 时间轴渲染 ---------- */
+  function shortHex(h) { return h ? h.slice(0, 8) + "…" + h.slice(-6) : ""; }
+
+  function sigChips(snap) {
+    var wrap = el("div", "sigs");
+    [["sig A · Alice", snap.sigA, snap.sigAValid],
+     ["sig B · Bob",   snap.sigB, snap.sigBValid]].forEach(function (p) {
+      var chip = el("span", "sig " + (p[2] ? "good" : "bad"));
+      chip.textContent = (p[2] ? "✓ " : "✗ ") + p[0] + " " + shortHex(p[1]);
+      chip.title = p[1] || "";
+      wrap.appendChild(chip);
+    });
+    return wrap;
+  }
+
+  function detailList(kind, detail) {
+    var det = el("details", "detail");
+    var sum = el("summary", null, "字段细节");
+    det.appendChild(sum);
+    var kv = el("dl", "kv");
+    Object.keys(detail).forEach(function (k) {
+      var row = el("div");
+      var dt = el("dt", null, DETAIL_LABELS[k] || k);
+      var dd = el("dd", null, formatDetailValue(k, detail[k]));
+      row.appendChild(dt); row.appendChild(dd);
+      kv.appendChild(row);
+    });
+    det.appendChild(kv);
+    // 争议、反驳、拒绝类事件默认展开细节
+    if (["dispute", "refute", "refute-reject", "chain-reject", "update-reject"]
+        .indexOf(kind) >= 0) det.open = true;
+    return det;
+  }
+
+  function formatDetailValue(k, v) {
+    if (typeof v === "boolean") return v ? "有效 ✓" : "无效 ✗";
+    if (k === "from" || k === "firstDisputeBy") return v === "alice" ? "Alice" : "Bob";
+    return String(v);
+  }
+
+  function renderTimeline() {
+    var tl = $("timeline");
+    tl.textContent = "";
+    var shown = events().slice(0, step);
+    shown.forEach(function (ev, i) {
+      var meta = KIND_META[ev.kind] || { cls: "", badge: "b-note", label: ev.kind };
+      var row = el("div", "ev " + meta.cls + (i === shown.length - 1 ? " current" : ""));
+
+      var rail = el("div", "rail");
+      rail.appendChild(el("span", "seq", "#" + ev.seq));
+      var dot = el("span", "dot");
+      dot.style.background = dotColor(ev.kind);
+      dot.style.borderColor = dotColor(ev.kind);
+      rail.appendChild(dot);
+      row.appendChild(rail);
+
+      var body = el("div", "body");
+      var m = el("div", "meta");
+      m.appendChild(el("span", "tcode", "t=" + ev.time));
+      m.appendChild(el("span", "badge " + meta.badge, meta.label));
+      if (ev.actor) m.appendChild(el("span", "actor", ev.actor === "alice" ? "Alice" : "Bob"));
+      body.appendChild(m);
+      body.appendChild(el("div", "msg", ev.message));
+
+      if (ev.state) {
+        var ms = el("div", "mini-state");
+        ms.appendChild(el("span", "vchip", "v" + ev.state.version));
+        ms.appendChild(el("span", "bal",
+          "Alice " + ev.state.balanceA + " · Bob " + ev.state.balanceB));
+        body.appendChild(ms);
+        body.appendChild(sigChips(ev.state));
+      }
+      if (ev.detail && Object.keys(ev.detail).length) {
+        body.appendChild(detailList(ev.kind, ev.detail));
+      }
+      row.appendChild(body);
+      tl.appendChild(row);
+    });
+    if (shown.length) tl.scrollTop = tl.scrollHeight;
+    else {
+      var hint = el("div", "empty");
+      hint.style.padding = "22px 18px";
+      hint.textContent = "点击 ▶ 或按 → 键开始逐步回放";
+      tl.appendChild(hint);
+    }
+  }
+
+  function dotColor(kind) {
+    return ({
+      "channel-opened": "var(--accent)",
+      "update-ok": "var(--ok)",
+      "update-reject": "var(--warn)",
+      "dispute": "var(--warn)",
+      "chain-reject": "var(--danger)",
+      "refute": "var(--refute)",
+      "refute-reject": "var(--danger)",
+      "settled": "var(--ok)",
+      "note": "var(--note)"
+    })[kind] || "var(--muted)";
+  }
+
+  /* ---------- 状态板渲染 ---------- */
+  function partyCard(cardId, who, snap, pubHex) {
+    var card = $(cardId);
+    card.textContent = "";
+    var h = el("h2");
+    var nm = el("div", "name-line");
+    var av = el("span", "avatar " + (who === "A" ? "a" : "b"), who);
+    nm.appendChild(av);
+    nm.appendChild(el("strong", null, who === "A" ? "Alice" : "Bob"));
+    nm.appendChild(el("span", null, "持有状态"));
+    h.appendChild(nm);
+    card.appendChild(h);
+
+    if (!snap) {
+      card.appendChild(el("div", "empty", "尚无已保存的双签状态"));
+      return;
+    }
+    var fr1 = el("div", "field-row");
+    fr1.appendChild(el("span", "k", "最新版本"));
+    fr1.appendChild(el("span", "v", "v" + snap.version));
+    card.appendChild(fr1);
+
+    var bar = el("div", "balbar");
+    var total = snap.balanceA + snap.balanceB || 1;
+    var segA = el("i", "seg-a");
+    segA.style.width = (snap.balanceA / total * 100) + "%";
+    var segB = el("i", "seg-b");
+    segB.style.width = (snap.balanceB / total * 100) + "%";
+    bar.appendChild(segA); bar.appendChild(segB);
+    card.appendChild(bar);
+    var bl = el("div", "bal-legend");
+    bl.appendChild(el("span", null, "A " + snap.balanceA));
+    bl.appendChild(el("span", null, "B " + snap.balanceB));
+    card.appendChild(bl);
+
+    var fr2 = el("div", "field-row");
+    fr2.appendChild(el("span", "k", "Alice 签名"));
+    fr2.appendChild(el("span", "v", snap.sigAValid ? "✓ 校验通过" : "✗ 不匹配"));
+    fr2.lastChild.style.color = snap.sigAValid ? "var(--ok)" : "var(--danger)";
+    card.appendChild(fr2);
+    var fr3 = el("div", "field-row");
+    fr3.appendChild(el("span", "k", "Bob 签名"));
+    fr3.appendChild(el("span", "v", snap.sigBValid ? "✓ 校验通过" : "✗ 不匹配"));
+    fr3.lastChild.style.color = snap.sigBValid ? "var(--ok)" : "var(--danger)";
+    card.appendChild(fr3);
+  }
+
+  function chainCard(ev) {
+    var card = $("card-chain");
+    card.textContent = "";
+    var h = el("h2");
+    h.appendChild(document.createTextNode("链上仲裁合约"));
+    card.appendChild(h);
+
+    if (!ev || !ev.chain || ev.chain.status === "open" && !ev.chain.bestVersion) {
+      var pill = el("span", "pill open", "开启 · 无争议");
+      var row = el("div", "field-row");
+      row.appendChild(el("span", "k", "当前状态"));
+      row.appendChild(pill);
+      card.appendChild(row);
+      card.appendChild(el("div", "empty", "尚无争议提交，通道在链下运行"));
+      return;
+    }
+    var ch = ev.chain;
+    var r1 = el("div", "field-row");
+    r1.appendChild(el("span", "k", "当前状态"));
+    var label = ch.status === "disputed" ? "争议期进行中" : ch.status === "settled" ? "已最终结算" : "开启";
+    r1.appendChild(el("span", "pill " + ch.status, label));
+    card.appendChild(r1);
+
+    var r2 = el("div", "field-row");
+    r2.appendChild(el("span", "k", "已采信最高版本"));
+    r2.appendChild(el("span", "v", ch.bestVersion ? "v" + ch.bestVersion : "—"));
+    card.appendChild(r2);
+
+    if (ch.status === "disputed" || ch.bestVersion) {
+      // 争议期时间轴：起点 = deadline - period，右端留白一个 period
+      var start = ch.deadline ? ch.deadline - period() : 0;
+      var end = start + period() * 2;
+      var track = el("div", "timetrack");
+      var zone = el("div", "zone");
+      zone.style.left = "0%";
+      zone.style.width = (period() / (end - start) * 100) + "%";
+      track.appendChild(zone);
+      var tick = el("div", "tick");
+      tick.style.left = (period() / (end - start) * 100) + "%";
+      tick.appendChild(el("i", null, "截止 t=" + ch.deadline));
+      track.appendChild(tick);
+      var nowDot = el("div", "now");
+      var nowPos = Math.max(0, Math.min(1, (ev.time - start) / (end - start)));
+      nowDot.style.left = "calc(" + (nowPos * 100) + "% - 6px)";
+      nowDot.title = "当前 t=" + ev.time;
+      track.appendChild(nowDot);
+      card.appendChild(track);
+      var tl2 = el("div", "track-labels");
+      tl2.appendChild(el("span", null, "争议期开始 t=" + start));
+      tl2.appendChild(el("span", null, "当前 t=" + ev.time));
+      card.appendChild(tl2);
+    }
+
+    if (ch.status === "settled") {
+      var box = el("div", "final-box");
+      var f1 = el("div", "field-row");
+      f1.appendChild(el("span", "k", "结算版本"));
+      f1.appendChild(el("span", "v", "v" + ch.finalVersion));
+      box.appendChild(f1);
+      var f2 = el("div", "field-row");
+      f2.appendChild(el("span", "k", "Alice 所得"));
+      f2.appendChild(el("span", "v", String(ch.finalA)));
+      box.appendChild(f2);
+      var f3 = el("div", "field-row");
+      f3.appendChild(el("span", "k", "Bob 所得"));
+      f3.appendChild(el("span", "v", String(ch.finalB)));
+      box.appendChild(f3);
+      card.appendChild(box);
+    }
+  }
+
+  function keysCard() {
+    var s = scenario();
+    var card = $("card-keys");
+    card.textContent = "";
+    var h = el("h2");
+    h.appendChild(document.createTextNode("登记在链的公钥"));
+    card.appendChild(h);
+    [["a", "Alice", s.pubA], ["b", "Bob", s.pubB]].forEach(function (p) {
+      var line = el("div", "keyline");
+      line.appendChild(el("span", "tag " + p[0], p[1]));
+      var code = el("code", null, p[2]);
+      code.title = p[2];
+      line.appendChild(code);
+      card.appendChild(line);
+    });
+  }
+
+  function syncBanner(ev) {
+    var b = $("sync-banner");
+    b.className = "in-sync";
+    b.textContent = "双方链下状态一致";
+    if (ev && ev.chain && ev.chain.status === "settled") {
+      b.className = "in-sync";
+      b.textContent = "通道已关闭：按链上最高版本双签状态 v" +
+        ev.chain.finalVersion + " 完成最终结算（Alice " + ev.chain.finalA +
+        " · Bob " + ev.chain.finalB + "）";
+    } else if (ev && ev.chain && ev.chain.status === "disputed") {
+      if (ev.heldA && ev.heldB && ev.heldA.version !== ev.heldB.version) {
+        b.className = "diverge";
+        b.textContent = "⚠ 版本分叉且争议期进行中：Alice 持有 v" + ev.heldA.version +
+          "，Bob 持有 v" + ev.heldB.version + "；须在 t=" + ev.chain.deadline +
+          " 前提交更高版本双签状态作为欺诈证明，否则链上按已采信版本结算";
+      } else {
+        b.className = "diverge";
+        b.textContent = "争议期进行中：可在 t=" + ev.chain.deadline +
+          " 前提交更高版本双签状态作为欺诈证明";
+      }
+    } else if (ev && ev.heldA && ev.heldB && ev.heldA.version !== ev.heldB.version) {
+      b.className = "diverge";
+      b.textContent = "⚠ 版本分叉：Alice 持有 v" + ev.heldA.version +
+        "，Bob 持有 v" + ev.heldB.version + " — 链上仲裁将采信版本号更高者";
+    }
+  }
+
+  /* ---------- 总渲染 ---------- */
+  function render() {
+    var evs = events();
+    var current = step > 0 ? evs[step - 1] : null;
+    $("step-now").textContent = step;
+    $("step-total").textContent = evs.length;
+    $("step-time").textContent = current ? current.time : 0;
+    $("progress-bar").style.width = (evs.length ? step / evs.length * 100 : 0) + "%";
+    $("btn-prev").disabled = step === 0;
+    $("btn-first").disabled = step === 0;
+    $("btn-next").disabled = step === evs.length;
+    $("btn-last").disabled = step === evs.length;
+
+    renderTimeline();
+    partyCard("card-a", "A", current ? current.heldA : null);
+    partyCard("card-b", "B", current ? current.heldB : null);
+    chainCard(current);
+    keysCard();
+    syncBanner(current);
+  }
+
+  var initial = readHash();
+  loadScenario(initial ? initial.s : 0, initial ? initial.n : 0);
+  window.addEventListener("hashchange", function () {
+    var h = readHash();
+    if (h && (h.s !== scenarioIdx)) loadScenario(h.s, h.n);
+    else if (h) setStep(h.n);
+  });
+})();
+</script>
+</body>
+</html>

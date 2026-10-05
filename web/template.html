@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>状态通道回放</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #171a20;
+    --ink-soft: #3c424e;
+    --muted: #6b7280;
+    --line: #d9dee6;
+    --accent: #0c7d78;
+    --accent-soft: #e0f2f1;
+    --ok: #1a7f4b;
+    --ok-soft: #e2f3ea;
+    --warn: #b35400;
+    --warn-soft: #fdeedd;
+    --danger: #c02d2d;
+    --danger-soft: #fbe6e6;
+    --refute: #5b3fc4;
+    --refute-soft: #ece8fb;
+    --note: #5f6b7a;
+    --note-soft: #edf0f4;
+    --shadow: 0 1px 2px rgba(20,25,35,.06), 0 4px 14px rgba(20,25,35,.06);
+    --radius: 12px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+            "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10131a;
+      --surface: #191d26;
+      --surface-2: #222733;
+      --ink: #e9ecf2;
+      --ink-soft: #c3c9d4;
+      --muted: #8f98a8;
+      --line: #2e3442;
+      --accent: #38c4ba;
+      --accent-soft: #13343a;
+      --ok: #4cc38a;
+      --ok-soft: #123225;
+      --warn: #e89b5e;
+      --warn-soft: #3a2715;
+      --danger: #f07878;
+      --danger-soft: #3c1c1c;
+      --refute: #a292f0;
+      --refute-soft: #272244;
+      --note: #98a2b3;
+      --note-soft: #232833;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10131a;
+    --surface: #191d26;
+    --surface-2: #222733;
+    --ink: #e9ecf2;
+    --ink-soft: #c3c9d4;
+    --muted: #8f98a8;
+    --line: #2e3442;
+    --accent: #38c4ba;
+    --ok: #4cc38a;
+    --ok-soft: #123225;
+    --warn: #e89b5e;
+    --warn-soft: #3a2715;
+    --danger: #f07878;
+    --danger-soft: #3c1c1c;
+    --refute: #a292f0;
+    --refute-soft: #272244;
+    --note: #98a2b3;
+    --note-soft: #232833;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px 20px 56px;
+  }
+
+  /* ---------- 头部 ---------- */
+  header.masthead {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
+  }
+  .eyebrow {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin-bottom: 6px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: .01em; }
+  .sub { color: var(--muted); margin: 0; max-width: 62ch; font-size: 13px; }
+  .head-actions { display: flex; gap: 8px; align-items: center; }
+  button {
+    font: inherit; color: inherit; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface);
+    border-radius: 9px; padding: 7px 12px;
+    transition: border-color .15s, background .15s, transform .05s;
+  }
+  button:hover { border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.icon-btn { padding: 7px 10px; }
+
+  /* ---------- 场景标签 ---------- */
+  .tabs {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .tab {
+    border-radius: 999px; padding: 7px 15px; font-size: 13px;
+    background: var(--surface); border: 1px solid var(--line); color: var(--ink-soft);
+  }
+  .tab[aria-selected="true"] {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+  }
+  .narrative {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;
+    color: var(--ink-soft); font-size: 13px;
+  }
+
+  /* ---------- 回放控制条 ---------- */
+  .controls {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+  .step-info { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 92px; }
+  .step-info small { color: var(--muted); font-weight: 400; }
+  .transport { display: flex; gap: 6px; }
+  .transport button { min-width: 38px; font-weight: 600; }
+  select {
+    font: inherit; padding: 6px 8px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  }
+  .progress {
+    flex: 1 1 220px; height: 6px; border-radius: 999px;
+    background: var(--surface-2); overflow: hidden; min-width: 160px;
+  }
+  .progress > i {
+    display: block; height: 100%; background: var(--accent);
+    width: 0%; transition: width .25s ease;
+  }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+  /* ---------- 主布局 ---------- */
+  .board-grid {
+    display: grid; gap: 16px;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .board-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* ---------- 时间轴 ---------- */
+  .timeline {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 8px 0; max-height: 72vh; overflow-y: auto;
+  }
+  .ev {
+    position: relative; display: flex; gap: 12px;
+    padding: 11px 16px 11px 14px;
+    border-left: 3px solid transparent;
+  }
+  .ev + .ev { border-top: 1px solid var(--line); }
+  .ev .rail {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding-top: 2px; flex: 0 0 34px;
+  }
+  .dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--surface-2); border: 2px solid var(--line);
+  }
+  .ev .seq { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ev .body { min-width: 0; flex: 1; }  .ev .meta {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 2px;
+  }
+  .tcode {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .badge {
+    font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+    background: var(--note-soft); color: var(--note); white-space: nowrap;
+  }
+  .ev .msg { color: var(--ink-soft); font-size: 13px; }
+  .ev .actor {
+    font-size: 11px; font-weight: 600; color: var(--accent);
+  }
+  .ev.current {
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
+  }
+  .ev.hot { box-shadow: inset 0 0 0 1px var(--line); }
+  .ev.k-dispute { border-left-color: var(--warn); }
+  .ev.k-refute  { border-left-color: var(--refute); }
+  .ev.k-reject, .ev.k-chainreject, .ev.k-refutereject { border-left-color: var(--danger); }
+  .ev.k-settled { border-left-color: var(--ok); }
+
+  .b-opened  { background: var(--accent-soft); color: var(--accent); }
+  .b-update  { background: var(--ok-soft); color: var(--ok); }
+  .b-reject  { background: var(--warn-soft); color: var(--warn); }
+  .b-dispute { background: var(--warn-soft); color: var(--warn); }
+  .b-chain   { background: var(--danger-soft); color: var(--danger); }
+  .b-refute  { background: var(--refute-soft); color: var(--refute); }
+  .b-refrej  { background: var(--danger-soft); color: var(--danger); }
+  .b-settled { background: var(--ok-soft); color: var(--ok); }
+  .b-note    { background: var(--note-soft); color: var(--note); }
+
+  /* 事件内的状态/签名/细节 */
+  .mini-state {
+    margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  }
+  .vchip {
+    font-family: var(--mono); font-size: 11.5px; font-weight: 700;
+    background: var(--surface-2); border-radius: 7px; padding: 2px 8px;
+  }
+  .bal {
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+  .sigs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .sig {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+    background: var(--surface-2); border-radius: 6px; padding: 1.5px 7px;
+  }
+  .sig.good { color: var(--ok); }
+  .sig.bad  { color: var(--danger); background: var(--danger-soft); }
+  details.detail { margin-top: 7px; }
+  details.detail summary {
+    cursor: pointer; font-size: 11.5px; color: var(--muted);
+    list-style: none; user-select: none;
+  }
+  details.detail summary::before { content: "▸ "; }
+  details.detail[open] summary::before { content: "▾ "; }
+  .kv {
+    margin-top: 6px; border: 1px solid var(--line); border-radius: 8px;
+    overflow: hidden; font-size: 12px;
+  }
+  .kv div {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 4px 10px; border-bottom: 1px solid var(--line);
+  }
+  .kv div:last-child { border-bottom: none; }
+  .kv dt { color: var(--muted); margin: 0; }
+  .kv dd { margin: 0; font-family: var(--mono); font-size: 11.5px; text-align: right;
+           word-break: break-all; }
+
+  /* ---------- 右侧状态板 ---------- */
+  .board { display: flex; flex-direction: column; gap: 12px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 14px 16px;
+  }
+  .card h2 {
+    margin: 0 0 10px; font-size: 12px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .who { display: flex; align-items: center; gap: 8px; }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 8px; display: grid;
+    place-items: center; font-weight: 700; font-size: 12px; color: #fff;
+  }
+  .avatar.a { background: var(--accent); }
+  .avatar.b { background: var(--refute); }
+  .name-line { display: flex; align-items: baseline; gap: 8px; }
+  .name-line strong { font-size: 14px; }
+  .name-line span { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+
+  .field-row {
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 5px 0; font-size: 13px;
+  }
+  .field-row .k { color: var(--muted); }
+  .field-row .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .empty { color: var(--muted); font-size: 12.5px; font-style: italic; }
+
+  .balbar {
+    display: flex; height: 14px; border-radius: 7px; overflow: hidden;
+    background: var(--surface-2); margin: 8px 0 4px;
+  }
+  .balbar i { display: block; height: 100%; transition: width .3s ease; }
+  .balbar .seg-a { background: var(--accent); }
+  .balbar .seg-b { background: var(--refute); }
+  .bal-legend {
+    display: flex; justify-content: space-between; font-size: 11px; color: var(--muted);
+    font-variant-numeric: tabular-nums; font-family: var(--mono);
+  }
+
+  .diverge {
+    border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn);
+    border-radius: 10px; padding: 9px 13px; font-size: 12.5px; font-weight: 600;
+    display: flex; gap: 8px; align-items: center;
+  }
+  .in-sync {
+    border: 1px dashed var(--line); border-radius: 10px; padding: 8px 13px;
+    font-size: 12px; color: var(--muted); text-align: center;
+  }
+
+  .pill {
+    font-size: 11.5px; font-weight: 700; padding: 3px 11px; border-radius: 999px;
+  }
+  .pill.open { background: var(--note-soft); color: var(--note); }
+  .pill.disputed { background: var(--warn-soft); color: var(--warn); }
+  .pill.settled { background: var(--ok-soft); color: var(--ok); }
+
+  .timetrack {
+    position: relative; height: 22px; margin: 10px 2px 4px;
+  }
+  .timetrack .zone {
+    position: absolute; top: 7px; height: 8px; border-radius: 4px;
+    background: var(--warn-soft); border: 1px solid var(--warn);
+  }
+  .timetrack .tick {
+    position: absolute; top: 3px; width: 2px; height: 16px; background: var(--muted);
+  }
+  .timetrack .tick i {
+    position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+    font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--muted);
+  }
+  .timetrack .now {
+    position: absolute; top: 2px; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--accent);
+    transition: left .3s ease;
+  }
+  .track-labels {
+    display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted);
+  }
+
+  .final-box {
+    margin-top: 10px; border-radius: 10px; padding: 10px 13px;
+    background: var(--ok-soft); border: 1px solid var(--ok);
+  }
+  .final-box .field-row .k { color: var(--ok); }
+
+  .keys-card .keyline {
+    display: flex; gap: 8px; align-items: center; margin: 6px 0; font-size: 11.5px;
+    min-width: 0;
+  }
+  .keys-card .keyline code {
+    flex: 1 1 auto; min-width: 0;
+    font-family: var(--mono); color: var(--muted); font-size: 10.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .keys-card .tag {
+    flex: 0 0 auto; font-weight: 700; color: #fff; border-radius: 6px;
+    padding: 1px 8px; font-size: 10.5px;
+  }
+  .keys-card .tag.a { background: var(--accent); }
+  .keys-card .tag.b { background: var(--refute); }
+
+  footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div>
+      <div class="eyebrow">Off-chain State Channel · On-chain Arbitration</div>
+      <h1>双方状态通道交互回放</h1>
+      <p class="sub">逐步回放 Alice 与 Bob 的链下状态更新：版本号严格递增的双签状态交换、链上争议仲裁、争议期内欺诈证明与过期反驳、伪造签名识别。所有签名由 Go 标准库 <code>crypto/ed25519</code> 生成并在页面中逐方展示校验结果。</p>
+    </div>
+    <div class="head-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" title="切换深浅色">◐ 主题</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="场景选择"></nav>
+  <div class="narrative" id="narrative"></div>
+
+  <div class="controls">
+    <div class="step-info"><span id="step-now">0</span> / <span id="step-total">0</span>
+      <small>步 · t=<span id="step-time">0</span></small>
+    </div>
+    <div class="transport">
+      <button id="btn-first" type="button" title="回到开头" aria-label="回到开头">⏮</button>
+      <button id="btn-prev"  type="button" title="上一步" aria-label="上一步">◀</button>
+      <button id="btn-play"  type="button" title="播放/暂停" aria-label="播放或暂停">▶</button>
+      <button id="btn-next"  type="button" title="下一步" aria-label="下一步">▶</button>
+      <button id="btn-last"  type="button" title="跳到结尾" aria-label="跳到结尾">⏭</button>
+    </div>
+    <select id="speed" title="播放速度" aria-label="播放速度">
+      <option value="1600">0.5×</option>
+      <option value="1100" selected>1×</option>
+      <option value="650">2×</option>
+      <option value="320">4×</option>
+    </select>
+    <div class="progress" aria-hidden="true"><i id="progress-bar"></i></div>
+    <div class="legend">
+      <span><i style="background:var(--accent)"></i>更新</span>
+      <span><i style="background:var(--warn)"></i>争议</span>
+      <span><i style="background:var(--refute)"></i>反驳</span>
+      <span><i style="background:var(--danger)"></i>拒绝/伪造</span>
+      <span><i style="background:var(--ok)"></i>结算</span>
+    </div>
+  </div>
+
+  <div class="board-grid">
+    <section class="timeline" id="timeline" aria-label="事件时间轴"></section>
+
+    <aside class="board">
+      <div id="sync-banner" class="in-sync">回放开始：双方将各自保存链下最新双签状态</div>
+      <div class="card" id="card-a"></div>
+      <div class="card" id="card-b"></div>
+      <div class="card" id="card-chain"></div>
+      <div class="card keys-card" id="card-keys"></div>
+    </aside>
+  </div>
+
+  <footer>
+    本页面为 Go 程序生成的单一静态文件：数据与逻辑全部内嵌，无外部依赖、无网络请求。
+    签名内容 = 域分隔前缀 + 通道 ID + 版本号 + 双方余额（大端定长编码），由 Alice、Bob 分别用 Ed25519 私钥签名。
+  </footer>
+</div>
+
+<script type="application/json" id="report-data">/*__REPORT_JSON__*/</script>
+<script>
+(function () {
+  "use strict";
+
+  var report = JSON.parse(document.getElementById("report-data").textContent);
+  var KIND_META = {
+    "channel-opened": { cls: "k-opened",  badge: "b-opened",  label: "通道建立" },
+    "update-ok":      { cls: "k-updateok", badge: "b-update",  label: "链下更新" },
+    "update-reject":  { cls: "k-reject",   badge: "b-reject",  label: "拒绝更新" },
+    "dispute":        { cls: "k-dispute hot", badge: "b-dispute", label: "发起争议" },
+    "chain-reject":   { cls: "k-chainreject", badge: "b-chain", label: "链上拒绝" },
+    "refute":         { cls: "k-refute hot",  badge: "b-refute", label: "欺诈证明" },
+    "refute-reject":  { cls: "k-refutereject", badge: "b-refrej", label: "反驳被拒" },
+    "settled":        { cls: "k-settled", badge: "b-settled", label: "最终结算" },
+    "note":           { cls: "k-note",    badge: "b-note",    label: "旁白" }
+  };
+  var DETAIL_LABELS = {
+    depositA: "Alice 初始存款", depositB: "Bob 初始存款", total: "通道总额",
+    from: "发起方", amount: "转账金额",
+    reason: "原因", sigAValid: "Alice 签名", sigBValid: "Bob 签名",
+    lastVersion: "接收方已知版本", version: "版本号",
+    heldByA: "Alice 持有版本", heldByB: "Bob 持有版本",
+    submittedVersion: "提交版本", deadline: "争议期截止 t",
+    disputePeriod: "争议期长度", now: "当前时间 t",
+    evidenceVersion: "证据版本", settledAtVersion: "已采信版本",
+    invalidatedVersion: "失效版本", newBestVersion: "新采信版本",
+    bestVersion: "已采信版本", winningVersion: "获胜版本",
+    balanceA: "Alice 最终余额", balanceB: "Bob 最终余额",
+    firstDisputeBy: "争议发起方"
+  };
+
+  var scenarioIdx = 0, step = 0, playing = false, timer = null;
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function scenario() { return report.scenarios[scenarioIdx]; }
+  function events() { return scenario().events; }
+  function period() { return report.disputePeriod; }
+
+  /* ---------- 主题 ---------- */
+  var themeBtn = $("theme-toggle");
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme") ||
+      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  }
+  themeBtn.addEventListener("click", function () {
+    document.documentElement.setAttribute("data-theme",
+      currentTheme() === "dark" ? "light" : "dark");
+  });
+
+  /* ---------- 场景标签 ---------- */
+  var tabs = $("tabs");
+  report.scenarios.forEach(function (s, i) {
+    var b = el("button", "tab", s.title.replace(/^场景[一二三四]：/, ""));
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", i === 0 ? "true" : "false");
+    b.addEventListener("click", function () { loadScenario(i); });
+    tabs.appendChild(b);
+  });
+
+  function loadScenario(i, stepN) {
+    scenarioIdx = i;
+    stopPlay();
+    step = (typeof stepN === "number") ? stepN : 0;
+    Array.prototype.forEach.call(tabs.children, function (b, j) {
+      b.setAttribute("aria-selected", j === i ? "true" : "false");
+    });
+    $("narrative").textContent = scenario().narrative;
+    render();
+    updateHash();
+  }
+
+  // URL hash 形如 #2/5 表示场景下标 2、第 5 步，便于分享定位。
+  function updateHash() {
+    try {
+      var h = "#" + scenarioIdx + "/" + step;
+      if (location.hash !== h) history.replaceState(null, "", h);
+    } catch (e) { /* file:// 下忽略 */ }
+  }
+  function readHash() {
+    var m = (location.hash || "").match(/^#(\d+)\/(\d+)$/);
+    if (!m) return null;
+    return { s: Math.min(parseInt(m[1], 10), report.scenarios.length - 1),
+             n: parseInt(m[2], 10) };
+  }
+
+  /* ---------- 控制 ---------- */
+  function setStep(n) {
+    step = Math.max(0, Math.min(events().length, n));
+    render();
+    updateHash();
+  }
+  function stopPlay() {
+    playing = false;
+    if (timer) { clearInterval(timer); timer = null; }
+    $("btn-play").textContent = "▶";
+  }
+  function startPlay() {
+    if (step >= events().length) step = 0;
+    playing = true;
+    $("btn-play").textContent = "⏸";
+    timer = setInterval(function () {
+      if (step >= events().length) { stopPlay(); return; }
+      setStep(step + 1);
+    }, parseInt($("speed").value, 10));
+  }
+  $("btn-first").addEventListener("click", function () { stopPlay(); setStep(0); });
+  $("btn-prev").addEventListener("click",  function () { stopPlay(); setStep(step - 1); });
+  $("btn-next").addEventListener("click",  function () { stopPlay(); setStep(step + 1); });
+  $("btn-last").addEventListener("click",  function () { stopPlay(); setStep(events().length); });
+  $("btn-play").addEventListener("click",  function () { playing ? stopPlay() : startPlay(); });
+  $("speed").addEventListener("change", function () { if (playing) { stopPlay(); startPlay(); } });
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "SELECT") return;
+    if (e.key === "ArrowRight") { stopPlay(); setStep(step + 1); }
+    if (e.key === "ArrowLeft")  { stopPlay(); setStep(step - 1); }
+    if (e.key === " ") { e.preventDefault(); playing ? stopPlay() : startPlay(); }
+  });
+
+  /* ---------- 时间轴渲染 ---------- */
+  function shortHex(h) { return h ? h.slice(0, 8) + "…" + h.slice(-6) : ""; }
+
+  function sigChips(snap) {
+    var wrap = el("div", "sigs");
+    [["sig A · Alice", snap.sigA, snap.sigAValid],
+     ["sig B · Bob",   snap.sigB, snap.sigBValid]].forEach(function (p) {
+      var chip = el("span", "sig " + (p[2] ? "good" : "bad"));
+      chip.textContent = (p[2] ? "✓ " : "✗ ") + p[0] + " " + shortHex(p[1]);
+      chip.title = p[1] || "";
+      wrap.appendChild(chip);
+    });
+    return wrap;
+  }
+
+  function detailList(kind, detail) {
+    var det = el("details", "detail");
+    var sum = el("summary", null, "字段细节");
+    det.appendChild(sum);
+    var kv = el("dl", "kv");
+    Object.keys(detail).forEach(function (k) {
+      var row = el("div");
+      var dt = el("dt", null, DETAIL_LABELS[k] || k);
+      var dd = el("dd", null, formatDetailValue(k, detail[k]));
+      row.appendChild(dt); row.appendChild(dd);
+      kv.appendChild(row);
+    });
+    det.appendChild(kv);
+    // 争议、反驳、拒绝类事件默认展开细节
+    if (["dispute", "refute", "refute-reject", "chain-reject", "update-reject"]
+        .indexOf(kind) >= 0) det.open = true;
+    return det;
+  }
+
+  function formatDetailValue(k, v) {
+    if (typeof v === "boolean") return v ? "有效 ✓" : "无效 ✗";
+    if (k === "from" || k === "firstDisputeBy") return v === "alice" ? "Alice" : "Bob";
+    return String(v);
+  }
+
+  function renderTimeline() {
+    var tl = $("timeline");
+    tl.textContent = "";
+    var shown = events().slice(0, step);
+    shown.forEach(function (ev, i) {
+      var meta = KIND_META[ev.kind] || { cls: "", badge: "b-note", label: ev.kind };
+      var row = el("div", "ev " + meta.cls + (i === shown.length - 1 ? " current" : ""));
+
+      var rail = el("div", "rail");
+      rail.appendChild(el("span", "seq", "#" + ev.seq));
+      var dot = el("span", "dot");
+      dot.style.background = dotColor(ev.kind);
+      dot.style.borderColor = dotColor(ev.kind);
+      rail.appendChild(dot);
+      row.appendChild(rail);
+
+      var body = el("div", "body");
+      var m = el("div", "meta");
+      m.appendChild(el("span", "tcode", "t=" + ev.time));
+      m.appendChild(el("span", "badge " + meta.badge, meta.label));
+      if (ev.actor) m.appendChild(el("span", "actor", ev.actor === "alice" ? "Alice" : "Bob"));
+      body.appendChild(m);
+      body.appendChild(el("div", "msg", ev.message));
+
+      if (ev.state) {
+        var ms = el("div", "mini-state");
+        ms.appendChild(el("span", "vchip", "v" + ev.state.version));
+        ms.appendChild(el("span", "bal",
+          "Alice " + ev.state.balanceA + " · Bob " + ev.state.balanceB));
+        body.appendChild(ms);
+        body.appendChild(sigChips(ev.state));
+      }
+      if (ev.detail && Object.keys(ev.detail).length) {
+        body.appendChild(detailList(ev.kind, ev.detail));
+      }
+      row.appendChild(body);
+      tl.appendChild(row);
+    });
+    if (shown.length) tl.scrollTop = tl.scrollHeight;
+    else {
+      var hint = el("div", "empty");
+      hint.style.padding = "22px 18px";
+      hint.textContent = "点击 ▶ 或按 → 键开始逐步回放";
+      tl.appendChild(hint);
+    }
+  }
+
+  function dotColor(kind) {
+    return ({
+      "channel-opened": "var(--accent)",
+      "update-ok": "var(--ok)",
+      "update-reject": "var(--warn)",
+      "dispute": "var(--warn)",
+      "chain-reject": "var(--danger)",
+      "refute": "var(--refute)",
+      "refute-reject": "var(--danger)",
+      "settled": "var(--ok)",
+      "note": "var(--note)"
+    })[kind] || "var(--muted)";
+  }
+
+  /* ---------- 状态板渲染 ---------- */
+  function partyCard(cardId, who, snap, pubHex) {
+    var card = $(cardId);
+    card.textContent = "";
+    var h = el("h2");
+    var nm = el("div", "name-line");
+    var av = el("span", "avatar " + (who === "A" ? "a" : "b"), who);
+    nm.appendChild(av);
+    nm.appendChild(el("strong", null, who === "A" ? "Alice" : "Bob"));
+    nm.appendChild(el("span", null, "持有状态"));
+    h.appendChild(nm);
+    card.appendChild(h);
+
+    if (!snap) {
+      card.appendChild(el("div", "empty", "尚无已保存的双签状态"));
+      return;
+    }
+    var fr1 = el("div", "field-row");
+    fr1.appendChild(el("span", "k", "最新版本"));
+    fr1.appendChild(el("span", "v", "v" + snap.version));
+    card.appendChild(fr1);
+
+    var bar = el("div", "balbar");
+    var total = snap.balanceA + snap.balanceB || 1;
+    var segA = el("i", "seg-a");
+    segA.style.width = (snap.balanceA / total * 100) + "%";
+    var segB = el("i", "seg-b");
+    segB.style.width = (snap.balanceB / total * 100) + "%";
+    bar.appendChild(segA); bar.appendChild(segB);
+    card.appendChild(bar);
+    var bl = el("div", "bal-legend");
+    bl.appendChild(el("span", null, "A " + snap.balanceA));
+    bl.appendChild(el("span", null, "B " + snap.balanceB));
+    card.appendChild(bl);
+
+    var fr2 = el("div", "field-row");
+    fr2.appendChild(el("span", "k", "Alice 签名"));
+    fr2.appendChild(el("span", "v", snap.sigAValid ? "✓ 校验通过" : "✗ 不匹配"));
+    fr2.lastChild.style.color = snap.sigAValid ? "var(--ok)" : "var(--danger)";
+    card.appendChild(fr2);
+    var fr3 = el("div", "field-row");
+    fr3.appendChild(el("span", "k", "Bob 签名"));
+    fr3.appendChild(el("span", "v", snap.sigBValid ? "✓ 校验通过" : "✗ 不匹配"));
+    fr3.lastChild.style.color = snap.sigBValid ? "var(--ok)" : "var(--danger)";
+    card.appendChild(fr3);
+  }
+
+  function chainCard(ev) {
+    var card = $("card-chain");
+    card.textContent = "";
+    var h = el("h2");
+    h.appendChild(document.createTextNode("链上仲裁合约"));
+    card.appendChild(h);
+
+    if (!ev || !ev.chain || ev.chain.status === "open" && !ev.chain.bestVersion) {
+      var pill = el("span", "pill open", "开启 · 无争议");
+      var row = el("div", "field-row");
+      row.appendChild(el("span", "k", "当前状态"));
+      row.appendChild(pill);
+      card.appendChild(row);
+      card.appendChild(el("div", "empty", "尚无争议提交，通道在链下运行"));
+      return;
+    }
+    var ch = ev.chain;
+    var r1 = el("div", "field-row");
+    r1.appendChild(el("span", "k", "当前状态"));
+    var label = ch.status === "disputed" ? "争议期进行中" : ch.status === "settled" ? "已最终结算" : "开启";
+    r1.appendChild(el("span", "pill " + ch.status, label));
+    card.appendChild(r1);
+
+    var r2 = el("div", "field-row");
+    r2.appendChild(el("span", "k", "已采信最高版本"));
+    r2.appendChild(el("span", "v", ch.bestVersion ? "v" + ch.bestVersion : "—"));
+    card.appendChild(r2);
+
+    if (ch.status === "disputed" || ch.bestVersion) {
+      // 争议期时间轴：起点 = deadline - period，右端留白一个 period
+      var start = ch.deadline ? ch.deadline - period() : 0;
+      var end = start + period() * 2;
+      var track = el("div", "timetrack");
+      var zone = el("div", "zone");
+      zone.style.left = "0%";
+      zone.style.width = (period() / (end - start) * 100) + "%";
+      track.appendChild(zone);
+      var tick = el("div", "tick");
+      tick.style.left = (period() / (end - start) * 100) + "%";
+      tick.appendChild(el("i", null, "截止 t=" + ch.deadline));
+      track.appendChild(tick);
+      var nowDot = el("div", "now");
+      var nowPos = Math.max(0, Math.min(1, (ev.time - start) / (end - start)));
+      nowDot.style.left = "calc(" + (nowPos * 100) + "% - 6px)";
+      nowDot.title = "当前 t=" + ev.time;
+      track.appendChild(nowDot);
+      card.appendChild(track);
+      var tl2 = el("div", "track-labels");
+      tl2.appendChild(el("span", null, "争议期开始 t=" + start));
+      tl2.appendChild(el("span", null, "当前 t=" + ev.time));
+      card.appendChild(tl2);
+    }
+
+    if (ch.status === "settled") {
+      var box = el("div", "final-box");
+      var f1 = el("div", "field-row");
+      f1.appendChild(el("span", "k", "结算版本"));
+      f1.appendChild(el("span", "v", "v" + ch.finalVersion));
+      box.appendChild(f1);
+      var f2 = el("div", "field-row");
+      f2.appendChild(el("span", "k", "Alice 所得"));
+      f2.appendChild(el("span", "v", String(ch.finalA)));
+      box.appendChild(f2);
+      var f3 = el("div", "field-row");
+      f3.appendChild(el("span", "k", "Bob 所得"));
+      f3.appendChild(el("span", "v", String(ch.finalB)));
+      box.appendChild(f3);
+      card.appendChild(box);
+    }
+  }
+
+  function keysCard() {
+    var s = scenario();
+    var card = $("card-keys");
+    card.textContent = "";
+    var h = el("h2");
+    h.appendChild(document.createTextNode("登记在链的公钥"));
+    card.appendChild(h);
+    [["a", "Alice", s.pubA], ["b", "Bob", s.pubB]].forEach(function (p) {
+      var line = el("div", "keyline");
+      line.appendChild(el("span", "tag " + p[0], p[1]));
+      var code = el("code", null, p[2]);
+      code.title = p[2];
+      line.appendChild(code);
+      card.appendChild(line);
+    });
+  }
+
+  function syncBanner(ev) {
+    var b = $("sync-banner");
+    b.className = "in-sync";
+    b.textContent = "双方链下状态一致";
+    if (ev && ev.chain && ev.chain.status === "settled") {
+      b.className = "in-sync";
+      b.textContent = "通道已关闭：按链上最高版本双签状态 v" +
+        ev.chain.finalVersion + " 完成最终结算（Alice " + ev.chain.finalA +
+        " · Bob " + ev.chain.finalB + "）";
+    } else if (ev && ev.chain && ev.chain.status === "disputed") {
+      if (ev.heldA && ev.heldB && ev.heldA.version !== ev.heldB.version) {
+        b.className = "diverge";
+        b.textContent = "⚠ 版本分叉且争议期进行中：Alice 持有 v" + ev.heldA.version +
+          "，Bob 持有 v" + ev.heldB.version + "；须在 t=" + ev.chain.deadline +
+          " 前提交更高版本双签状态作为欺诈证明，否则链上按已采信版本结算";
+      } else {
+        b.className = "diverge";
+        b.textContent = "争议期进行中：可在 t=" + ev.chain.deadline +
+          " 前提交更高版本双签状态作为欺诈证明";
+      }
+    } else if (ev && ev.heldA && ev.heldB && ev.heldA.version !== ev.heldB.version) {
+      b.className = "diverge";
+      b.textContent = "⚠ 版本分叉：Alice 持有 v" + ev.heldA.version +
+        "，Bob 持有 v" + ev.heldB.version + " — 链上仲裁将采信版本号更高者";
+    }
+  }
+
+  /* ---------- 总渲染 ---------- */
+  function render() {
+    var evs = events();
+    var current = step > 0 ? evs[step - 1] : null;
+    $("step-now").textContent = step;
+    $("step-total").textContent = evs.length;
+    $("step-time").textContent = current ? current.time : 0;
+    $("progress-bar").style.width = (evs.length ? step / evs.length * 100 : 0) + "%";
+    $("btn-prev").disabled = step === 0;
+    $("btn-first").disabled = step === 0;
+    $("btn-next").disabled = step === evs.length;
+    $("btn-last").disabled = step === evs.length;
+
+    renderTimeline();
+    partyCard("card-a", "A", current ? current.heldA : null);
+    partyCard("card-b", "B", current ? current.heldB : null);
+    chainCard(current);
+    keysCard();
+    syncBanner(current);
+  }
+
+  var initial = readHash();
+  loadScenario(initial ? initial.s : 0, initial ? initial.n : 0);
+  window.addEventListener("hashchange", function () {
+    var h = readHash();
+    if (h && (h.s !== scenarioIdx)) loadScenario(h.s, h.n);
+    else if (h) setStep(h.n);
+  });
+})();
+</script>
+</body>
+</html>
